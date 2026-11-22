@@ -1,5 +1,5 @@
 /* Caches the app shell so it opens offline. Bump CACHE when you change the files. */
-var CACHE = 'bowling-tracker-v2';
+var CACHE = 'bowling-tracker-v3';
 var FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {
