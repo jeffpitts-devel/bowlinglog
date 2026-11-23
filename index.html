@@ -1,5 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#0E1318"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Bowling"><link rel="apple-touch-icon" href="icon-192.png"><link rel="icon" href="icon-192.png" type="image/png"></head><body>
-<title>Bowling Tracker</title>
+<!doctype html><html><head><meta charset=utf8><title>Bowling Tracker</title><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
 <style>
@@ -195,7 +194,6 @@ textarea.field { height: 120px; padding: 10px 14px; font-size: 13px; font-family
 </div>
 
 <script>
-window.BOWL_NO_DOWNLOAD = true;
 /* ===== Bowling logic: pure functions, no DOM ===== */
 var ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 var ADJ = {
@@ -376,7 +374,8 @@ function computeStats(games) {
   var REASONS = [['left', 'Missed left'], ['right', 'Missed right'], ['stayed', 'Chopped it'], ['unsure', 'No idea']];
   var REASON_TEXT = { left: 'missed left', right: 'missed right', stayed: 'chopped it', unsure: 'no idea' };
   var SAMPLE_ID = 'sample-league';
-  var CAN_DL = !window.BOWL_NO_DOWNLOAD; // the try-it page cannot save files, so it hides Download
+  var CAN_DL = !(window.claude && window.claude.use); // on a normal website, download works directly; inside Claude it waits for the downloads capability
+  var dlApi = null;
 
   function fresh() { return { v: 1, leagues: [], games: [], activeId: null, lastLeague: null }; }
   function load() {
@@ -472,7 +471,7 @@ function computeStats(games) {
   }
   function leagueChoices() { return [['all', 'All leagues']].concat(data.leagues.map(function (l) { return [l.id, l.name]; })); }
   function warnHtml() {
-    return memoryOnly ? '<div class="warn" role="alert">This browser is not saving your games. Use Copy backup in Games before you close the page.</div>' : '';
+    return memoryOnly ? '<div class="warn" role="alert">This browser is not saving your games. Use Download in Games to save a backup before you close the page.</div>' : '';
   }
   function sampleButton() {
     return '<button type="button" class="btn sm quiet full" data-act="sample">Try it with sample games</button>';
@@ -729,9 +728,8 @@ function computeStats(games) {
 
     /* backup */
     h += '<hr class="hr"><div class="stack-lg"><h2 class="h2">Backup</h2><p class="small muted" style="margin:0">Your games are stored on this phone only. Save a copy now and then so a cleared browser never costs you a season.</p>' +
-      '<div class="row wrap">' + (CAN_DL ? '<button type="button" class="btn sm ghost grow" data-act="dl">Download</button>' : '') + '<button type="button" class="btn sm ghost grow" data-act="copy">Copy</button>' +
+      '<div class="row wrap">' + (CAN_DL ? '<button type="button" class="btn sm ghost grow" data-act="dl">Download</button>' : '') +
       '<label class="btn sm quiet grow" for="restoreFile" style="cursor:pointer">Restore</label><input class="sr" type="file" id="restoreFile" accept=".json,application/json"></div>';
-    if (ui.backupText) h += '<textarea class="field" id="backupBox" readonly aria-label="Backup text">' + esc(ui.backupText) + '</textarea><div class="tiny muted">Select all, copy, and paste it into a note.</div>';
     h += '</div>';
     if (hasSampleData()) h += '<button type="button" class="btn sm quiet full" data-act="rmSample">Remove sample games</button>';
     return h;
@@ -934,13 +932,25 @@ function computeStats(games) {
       case 'sample': loadSample(); ui.tab = 'stats'; render(true); toast('Sample games added. Remove them any time.'); break;
       case 'rmSample': removeSample(); render(true); toast('Sample games removed'); break;
       
-      case 'copy':
+      case 'dl':
         (function () {
-          var json = backupJson();
-          function fallback() { ui.backupText = json; render(); var b = $('backupBox'); if (b) { b.focus(); b.select(); } }
-          try {
-            navigator.clipboard.writeText(json).then(function () { toast('Backup copied. Paste it into a note.'); }, fallback);
-          } catch (err) { fallback(); }
+          if (!dlApi) {
+            try {
+              var a = document.createElement('a'), u = URL.createObjectURL(new Blob([backupJson()], { type: 'application/json' }));
+              var t = new Date(), p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+              a.href = u; a.download = 'bowling-backup-' + t.getFullYear() + '-' + p2(t.getMonth() + 1) + '-' + p2(t.getDate()) + '.json';
+              document.body.appendChild(a); a.click(); a.remove();
+              setTimeout(function () { URL.revokeObjectURL(u); }, 1000);
+              toast('Backup saved');
+            } catch (e) { toast('Could not save the file. Try again.'); }
+            return;
+          }
+          var d = new Date(), pad = function (n) { return (n < 10 ? '0' : '') + n; };
+          var name = 'bowling-backup-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+          dlApi.save({ filename: name, data: backupJson() }).then(
+            function () { toast('Backup saved'); },
+            function (err) { if (!err || err.code !== 'declined') toast('Could not save the file. Try again.'); }
+          );
         })();
         break;
     }
@@ -961,10 +971,16 @@ function computeStats(games) {
 
   save();
   render(true);
+  try {
+    if (window.claude && window.claude.use) {
+      window.claude.use('downloads').then(function (api) {
+        if (api) { dlApi = api; CAN_DL = true; render(); }
+      }, function () { /* no downloads here; Copy still works */ });
+    }
+  } catch (e) { /* optional */ }
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* optional */ }
 })();
 
 </script>
 
-<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
 </body></html>
