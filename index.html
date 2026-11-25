@@ -371,8 +371,9 @@ function computeStats(games) {
 (function () {
   var KEY = 'bowling-tracker-v1';
   var memoryOnly = false;
-  var REASONS = [['left', 'Missed left'], ['right', 'Missed right'], ['stayed', 'Chopped it'], ['unsure', 'No idea']];
-  var REASON_TEXT = { left: 'missed left', right: 'missed right', stayed: 'chopped it', unsure: 'no idea' };
+  var REASONS = [['left', 'Missed left'], ['right', 'Missed right'], ['stayed', 'Chopped it']];
+  /* 'unsure' (No idea) and 'split' are no longer offered as buttons, but older saved games can still carry them, so they stay readable. Splits are now counted automatically from the pins. */
+  var REASON_TEXT = { left: 'missed left', right: 'missed right', stayed: 'chopped it', split: 'split', unsure: 'no idea' };
   var SAMPLE_ID = 'sample-league';
   var CAN_DL = !(window.claude && window.claude.use); // on a normal website, download works directly; inside Claude it waits for the downloads capability
   var dlApi = null;
@@ -662,19 +663,22 @@ function computeStats(games) {
     var choices = [['all', 'All misses']].concat(missed.slice(0, 4).map(function (e) { return [e.key, leaveLabel(e).label + (leaveInfo(e.pins).kind === 'single' ? '-pin' : '')]; }));
     var sel = ui.sLeave;
     if (!choices.some(function (c) { return c[0] === sel; })) sel = 'all';
-    var counts = { left: 0, right: 0, stayed: 0, unsure: 0, none: 0 }, total = 0;
+    var counts = { left: 0, right: 0, stayed: 0, unsure: 0, none: 0 }, total = 0, splitMisses = 0;
     missed.forEach(function (e) {
       if (sel !== 'all' && e.key !== sel) return;
-      Object.keys(e.misses).forEach(function (k) { counts[k] += e.misses[k]; total += e.misses[k]; });
+      Object.keys(e.misses).forEach(function (k) { var slot = k === 'split' ? 'none' : (k in counts ? k : 'unsure'); counts[slot] += e.misses[k]; total += e.misses[k]; });
       counts.none += e.untagged; total += e.untagged;
+      if (leaveInfo(e.pins).kind === 'split') splitMisses += e.attempts - e.made;
     });
     h += '<div class="stack-lg"><div class="stack"><h2 class="h2">How you miss</h2><div class="small muted">' + (total ? 'From ' + total + ' missed spare' + (total === 1 ? '' : 's') : 'No missed spares yet') + '</div></div>';
     if (total) {
       if (choices.length > 1) h += chipsFor(choices, sel, 'sLeave');
       var maxc = 0; Object.keys(counts).forEach(function (k) { if (counts[k] > maxc) maxc = counts[k]; });
-      h += '<div class="stack-lg">' + [['right', 'Missed right'], ['left', 'Missed left'], ['stayed', 'Chopped it'], ['unsure', 'No idea'], ['none', 'No reason logged']].filter(function (r) { return counts[r[0]] > 0; }).map(function (r) {
+      h += '<div class="stack-lg">' + [['right', 'Missed right'], ['left', 'Missed left'], ['stayed', 'Chopped it'], ['unsure', 'No idea (older games)'], ['none', 'No reason logged']].filter(function (r) { return counts[r[0]] > 0; }).map(function (r) {
         return '<div class="mrow"><div class="lbl">' + r[1] + '</div><div class="bar"><i style="width:' + Math.round(100 * counts[r[0]] / maxc) + '%;background:var(--accent)"></i></div><div class="num n">' + counts[r[0]] + '</div></div>';
       }).join('') + '</div>';
+      h += '<hr class="hr"><div class="stack"><div class="mrow"><div class="lbl">Missed a split</div><div class="bar"><i style="width:' + Math.round(100 * splitMisses / total) + '%;background:var(--accent)"></i></div><div class="num n">' + splitMisses + '</div></div>' +
+        '<div class="tiny muted">' + Math.round(100 * splitMisses / total) + '% of ' + (sel === 'all' ? 'all ' : '') + 'missed spares were splits. Counted automatically from the pins left.</div></div>';
     }
     h += '</div>';
     if (hasSampleData()) h += '<button type="button" class="btn sm quiet full" data-act="rmSample">Remove sample games</button>';
@@ -685,7 +689,7 @@ function computeStats(games) {
   function ballLine(b) {
     if (b.s.length === 10) return b.l.length ? 'Left ' + leaveInfo(b.l).title : 'Strike';
     if (!b.l.length) return 'Made it';
-    return 'Missed' + (b.m ? ', ' + REASON_TEXT[b.m] : '') + (b.l.length < b.s.length ? ' (' + b.l.join('-') + ' left)' : '');
+    return 'Missed' + (b.m ? ', ' + (REASON_TEXT[b.m] || 'no idea') : '') + (b.l.length < b.s.length ? ' (' + b.l.join('-') + ' left)' : '');
   }
 
   function viewGames() {
