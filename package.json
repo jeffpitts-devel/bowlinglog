@@ -1,6 +1,0 @@
-{
-  "name": "bowling-tracker",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node --test", "serve": "npx http-server . -p 8080" }
-}
